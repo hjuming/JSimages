@@ -1,0 +1,37 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches:
+      - main  # 或是你的主要分支名稱
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20' 
+      
+      # 安裝 wrangler
+      - name: Install dependencies
+        run: npm install
+
+      # 設定 Worker 密鑰 (從 GitHub Secrets 讀取)
+      - name: Set Worker Secrets
+        run: |
+          echo ${{ secrets.USERNAME }} | npx wrangler secret put USERNAME
+          echo ${{ secrets.PASSWORD }} | npx wrangler secret put PASSWORD
+          echo ${{ secrets.DOMAIN }} | npx wrangler secret put DOMAIN
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      
+      # 部署 Worker
+      - name: Deploy Worker
+        run: npm run deploy
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
