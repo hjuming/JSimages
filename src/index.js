@@ -1,24 +1,19 @@
 /* * =================================================================
- * == 寵兒共和國-商品圖庫管理系統 v2.2 (CRUD 版) ==
+ * == 寵兒共和國-商品圖庫管理系統 v2.2 (CRUD 完整版) ==
  * * =================================================================
- * * 變更紀錄:
- * 1. (新) 新增 /edit 路由，用於顯示「編輯商品」表單 (generateEditProductPage)。
- * 2. (新) 新增 /update 路由，用於處理「編輯商品」的提交 (handleUpdateProductRequest)。
- * 3. (新) 新增 /delete 路由，用於處理「刪除商品」 (handleDeleteProductRequest)。
- * 4. (更新) / 路由 (generateProductListPage) 現在的「編輯」和「刪除」按鈕已啟用。
- * 5. (更新) /upload (handleAddProductRequest) 現在會正確處理來自「編輯」表單的更新。
- * 6. (更新) R2_BUCKET.delete() 現在會刪除整個 SKU 資料夾。
- * =================================================================
  */
 
 export default {
+  /**
+   * 1. 處理 HTTP 請求
+   */
   async fetch(request, env) {
     const { searchParams, pathname } = new URL(request.url);
     const domain = env.DOMAIN;
     const DATABASE = env.DATABASE;
     const USERNAME = env.USERNAME;
     const PASSWORD = env.PASSWORD;
-    const adminPath = env.ADMIN_PATH; 
+    const adminPath = env.ADMIN_PATH; // 舊的媒體庫路徑
     const enableAuth = env.ENABLE_AUTH === 'true';
     const R2_BUCKET = env.R2_BUCKET;
     const maxSizeMB = env.MAX_SIZE_MB ? parseInt(env.MAX_SIZE_MB, 10) : 10;
@@ -26,6 +21,7 @@ export default {
     const sku = searchParams.get('sku'); // 用於 Edit 和 Delete
 
     // --- 認證 ---
+    // 保護所有頁面
     if (enableAuth && !authenticate(request, USERNAME, PASSWORD)) {
       return new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Admin"' } });
     }
@@ -53,7 +49,7 @@ export default {
       case '/update':
         return request.method === 'POST' ? await handleUpdateProductRequest(request, DATABASE, domain, R2_BUCKET, maxSize) : new Response('Method Not Allowed', { status: 405 });
 
-      // 處理「刪除商品」的 GET 請求 (簡單起見用 GET)
+      // 處理「刪除商品」的 GET 請求
       case '/delete':
         if (!sku) return new Response('缺少 SKU', { status: 400 });
         return await handleDeleteProductRequest(DATABASE, R2_BUCKET, sku, domain);
@@ -66,7 +62,7 @@ export default {
       case '/bing-images':
         return handleBingImagesRequest();
 
-      // 預設：處理 R2 圖片請求
+      // 預設：處理 R2 圖片請求 (支援 SKU 資料夾)
       default:
         return await handleImageRequest(request, R2_BUCKET);
     }
@@ -74,7 +70,7 @@ export default {
 }; // --- export default 結束 ---
 
 
-// --- 認證函式 (不變) ---
+// --- 認證函式 ---
 function authenticate(request, USERNAME, PASSWORD) {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader) return false;
@@ -85,7 +81,7 @@ function authenticate(request, USERNAME, PASSWORD) {
   return username === USERNAME && password === PASSWORD;
 }
 
-// --- 輔助函式：基本 HTML 模板 (不變) ---
+// --- 輔助函式：基本 HTML 模板 ---
 function getHTMLTemplate(title, bodyContent) {
   return `
   <!DOCTYPE html>
@@ -145,7 +141,7 @@ function getHTMLTemplate(title, bodyContent) {
   `;
 }
 
-// --- [更新] 路由 1: 商品列表頁面 (/) ---
+// --- 路由 1: 商品列表頁面 (/) [v2.2] ---
 async function generateProductListPage(DATABASE) {
   let products = [];
   try {
@@ -158,7 +154,7 @@ async function generateProductListPage(DATABASE) {
   let tableRows = products.map(p => `
     <tr>
       <td>
-        ${p.image_file ? `<img src="/${p.sku}/${p.image_file}" class="product-image" alt="${p.title}">` : '<div class="product-image"></div>'}
+        ${p.image_file ? `<img src="/${p.sku}/${p.image_file.replace(/\s+/g, '_')}" class="product-image" alt="${p.title}">` : '<div class="product-image"></div>'}
       </td>
       <td>${p.sku}</td>
       <td>${p.title}</td>
@@ -210,7 +206,7 @@ async function generateProductListPage(DATABASE) {
   return new Response(getHTMLTemplate('商品列表', bodyContent), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 }
 
-// --- 路由 2: 新增商品頁面 (/add-product) ---
+// --- 路由 2: 新增商品頁面 (/add-product) [v2.1] ---
 function generateAddProductPage(request) {
   const bodyContent = `
     <div class="card">
@@ -227,8 +223,106 @@ function generateAddProductPage(request) {
                 <small class="form-text text-muted">這將作為圖片資料夾名稱，請勿使用特殊字元。</small>
               </div>
             </div>
-            ... (其他表單欄位和 v2.0/v2.1 相同，為節省篇幅省略) ...
+            <div class="col-md-6">
+              <div class="form-group">
+                <label for="title"><strong>產品名稱 *</strong></label>
+                <input type="text" class="form-control" id="title" name="title" required>
+              </div>
             </div>
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6">
+              <div class="form-group">
+                <label for="brand">品牌名稱</label>
+                <input type="text" class="form-control" id="brand" name="brand">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label for="category">類別</label>
+                <input type="text" class="form-control" id="category" name="category">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="file"><strong>商品圖檔 *</strong> (僅限一張主圖)</label>
+            <input type="file" class="form-control-file" id="file" name="file" required>
+            <small class="form-text text-muted">上傳的檔名將被儲存。</small>
+          </div>
+          
+          <hr>
+          
+          <div class="row">
+            <div class="col-md-6">
+              <div class="form-group">
+                <label for="title_en">英文品名</label>
+                <input type="text" class="form-control" id="title_en" name="title_en">
+              </div>
+            </div>
+             <div class="col-md-3">
+              <div class="form-group">
+                <label for="case_pack_size">箱入數</label>
+                <input type="number" class="form-control" id="case_pack_size" name="case_pack_size">
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-group">
+                <label for="msrp">建議售價</label>
+                <input type="number" step="0.01" class="form-control" id="msrp" name="msrp">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="description">商品介紹</label>
+            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="materials">成份/材質</label>
+            <textarea class="form-control" id="materials" name="materials" rows="2"></textarea>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6">
+              <div class="form-group">
+                <label for="barcode">國際條碼</label>
+                <input type="text" class="form-control" id="barcode" name="barcode">
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-group">
+                <label for="dimensions_cm">商品尺寸 (cm)</label>
+                <input type="text" class="form-control" id="dimensions_cm" name="dimensions_cm">
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-group">
+                <label for="weight_g">重量 (g)</label>
+                <input type="number" step="0.1" class="form-control" id="weight_g" name="weight_g">
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6">
+              <div class="form-group">
+                <label for="origin">產地</label>
+                <input type="text" class="form-control" id="origin" name="origin">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>現貨商品</label>
+                <select class="form-control" name="in_stock">
+                  <option value="Y">Y (是)</option>
+                  <option value="N" selected>N (否)</option>
+                </select>
+              </div>
+            </div>
+          </div>
           
           <button type="submit" class="btn btn-success">
             <i class="fas fa-check"></i> 儲存商品
@@ -237,11 +331,10 @@ function generateAddProductPage(request) {
       </div>
     </div>
   `;
-  // 為求簡潔，我省略了表單的完整 HTML，請你使用 v2.1 版本中的完整 `generateAddProductPage` 函式
-  return generateAddProductPage_v2_1(request); // 暫時呼叫舊版函式
+  return new Response(getHTMLTemplate('新增商品', bodyContent), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 }
 
-// --- [新] 路由 3: 編輯商品頁面 (/edit) ---
+// --- 路由 3: 編輯商品頁面 (/edit) [v2.2] ---
 async function generateEditProductPage(DATABASE, sku) {
   let product;
   try {
@@ -298,7 +391,7 @@ async function generateEditProductPage(DATABASE, sku) {
           <div class="form-group">
             <label for="file"><strong>商品圖檔</strong> (上傳新圖片以覆蓋)</label>
             <br>
-            ${val('image_file') ? `<img src="/${val('sku')}/${val('image_file')}" class="product-image mb-2" alt="Current Image">` : '<p class="text-muted">目前沒有主圖</p>'}
+            ${val('image_file') ? `<img src="/${val('sku')}/${val('image_file').replace(/\s+/g, '_')}" class="product-image mb-2" alt="Current Image">` : '<p class="text-muted">目前沒有主圖</p>'}
             <input type="file" class="form-control-file" id="file" name="file">
             <input type="hidden" name="existing_image_file" value="${val('image_file')}">
             <small class="form-text text-muted">如不更換，請保持此欄位空白。</small>
@@ -388,7 +481,7 @@ async function generateEditProductPage(DATABASE, sku) {
 }
 
 
-// --- [更新] 路由 4: 處理「新增」商品 (/upload) ---
+// --- 路由 4: 處理「新增」商品 (/upload) [v2.2] ---
 async function handleAddProductRequest(request, DATABASE, domain, R2_BUCKET, maxSize) {
   try {
     const formData = await request.formData();
@@ -402,7 +495,8 @@ async function handleAddProductRequest(request, DATABASE, domain, R2_BUCKET, max
     // 檢查 SKU 是否已存在
     const existing = await DATABASE.prepare("SELECT sku FROM products WHERE sku = ?").bind(sku).first();
     if (existing) {
-      return new Response(JSON.stringify({ error: `SKU 已存在: ${sku}。請使用「編輯」功能。` }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+      const html = `SKU 已存在: ${sku}。請 <a href="/edit?sku=${sku}">使用「編輯」功能</a> 或 <a href="/add-product">返回</a> 使用新的 SKU。`;
+      return new Response(getHTMLTemplate('SKU 已存在', `<div class="alert alert-danger">${html}</div>`), { status: 409, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
     }
 
     if (file.size > maxSize) {
@@ -447,11 +541,11 @@ async function handleAddProductRequest(request, DATABASE, domain, R2_BUCKET, max
 
   } catch (error) {
     console.error('上傳或資料庫錯誤:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(getHTMLTemplate('錯誤', `<div class="alert alert-danger">${error.message}</div>`), { status: 500, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
   }
 }
 
-// --- [新] 路由 5: 處理「更新」商品 (/update) ---
+// --- 路由 5: 處理「更新」商品 (/update) [v2.2] ---
 async function handleUpdateProductRequest(request, DATABASE, domain, R2_BUCKET, maxSize) {
   try {
     const formData = await request.formData();
@@ -481,7 +575,7 @@ async function handleUpdateProductRequest(request, DATABASE, domain, R2_BUCKET, 
       image_file = cleanFileName;
       
       // (可選) 刪除舊圖片
-      if (formData.get('existing_image_file')) {
+      if (formData.get('existing_image_file') && formData.get('existing_image_file') !== 'null') {
           const oldR2Key = `${sku}/${formData.get('existing_image_file')}`;
           if (oldR2Key !== r2Key) {
              await R2_BUCKET.delete(oldR2Key);
@@ -519,11 +613,11 @@ async function handleUpdateProductRequest(request, DATABASE, domain, R2_BUCKET, 
 
   } catch (error) {
     console.error('更新或資料庫錯誤:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(getHTMLTemplate('錯誤', `<div class="alert alert-danger">${error.message}</div>`), { status: 500, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
   }
 }
 
-// --- [新] 路由 6: 處理「刪除」商品 (/delete) ---
+// --- 路由 6: 處理「刪除」商品 (/delete) [v2.2] ---
 async function handleDeleteProductRequest(DATABASE, R2_BUCKET, sku, domain) {
   try {
     // 1. 刪除 D1 資料
@@ -531,9 +625,8 @@ async function handleDeleteProductRequest(DATABASE, R2_BUCKET, sku, domain) {
 
     // 2. 刪除 R2 上的整個資料夾 (批次刪除)
     const list = await R2_BUCKET.list({ prefix: `${sku}/` });
-    const keysToDelete = list.objects.map(obj => obj.key);
-    
-    if (keysToDelete.length > 0) {
+    if (list.objects.length > 0) {
+      const keysToDelete = list.objects.map(obj => obj.key);
       await R2_BUCKET.delete(keysToDelete);
     }
 
@@ -542,44 +635,76 @@ async function handleDeleteProductRequest(DATABASE, R2_BUCKET, sku, domain) {
     
   } catch (error) {
     console.error('刪除錯誤:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(getHTMLTemplate('錯誤', `<div class="alert alert-danger">${error.message}</div>`), { status: 500, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
   }
 }
 
 
-// --- 處理圖片請求 (不變) ---
+// --- 路由 7: 處理圖片請求 (v2.1) ---
 async function handleImageRequest(request, R2_BUCKET) {
   const cache = caches.default;
   const cacheKey = new Request(request.url);
   const cachedResponse = await cache.match(cacheKey);
   if (cachedResponse) return cachedResponse;
+
   const { pathname } = new URL(request.url);
+  // 路徑現在是 /SKU/filename.jpg 或舊的 /timestamp.ext
+  // 我們需要移除開頭的 '/'
   const r2Key = pathname.substring(1);
+
+  // 從 R2 獲取物件
   const object = await R2_BUCKET.get(r2Key);
   if (!object) {
-    const notFoundResponse = new Response('資源不存在', { status: 404 });
-    await cache.put(cacheKey, notFoundResponse.clone());
-    return notFoundResponse;
+    // 檢查是否是「舊格式」的圖片 (沒有資料夾)
+    const legacyKey = r2Key.split('.')[0];
+    const legacyObject = await R2_BUCKET.get(legacyKey);
+    if (!legacyObject) {
+      const notFoundResponse = new Response('資源不存在', { status: 404 });
+      await cache.put(cacheKey, notFoundResponse.clone());
+      return notFoundResponse;
+    }
+    // 如果是舊格式，就回傳舊物件
+    const headers = new Headers();
+    legacyObject.writeHttpMetadata(headers);
+    headers.set('etag', legacyObject.httpEtag);
+    headers.set('Content-Disposition', 'inline');
+    const responseToCache = new Response(legacyObject.body, { headers });
+    await cache.put(cacheKey, responseToCache.clone());
+    return responseToCache;
   }
+
+  // 如果是新格式 (有資料夾)，回傳新物件
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('etag', object.httpEtag);
   headers.set('Content-Disposition', 'inline');
+
   const responseToCache = new Response(object.body, { headers });
   await cache.put(cacheKey, responseToCache.clone());
   return responseToCache;
 }
 
 
-// --- [保留] 舊的媒體庫頁面 (不變) ---
+// --- [保留] 舊的媒體庫頁面 (v2.1) ---
 async function generateMediaListPage(DATABASE) {
   const mediaData = await fetchMediaData(DATABASE);
-  const mediaHtml = mediaData.map(({ url, brand, category }) => { 
+  const mediaHtml = mediaData.map(({ url, brand, category }) => { // 這裡的 media 表可能還有舊資料
     const fileExtension = url.split('.').pop().toLowerCase();
     const timestamp = url.split('/').pop().split('.')[0];
     const mediaType = fileExtension;
     const isVideo = ['mp4', 'webm', 'mov'].includes(fileExtension);
-    return `... (舊的 media HTML 模板) ...`; 
+    
+    return `
+    <div class="media-container" data-key="${url}" onclick="toggleImageSelection(this)">
+      <div class="media-type">${mediaType}</div>
+      ${isVideo ? 
+        `<video preload="none" style="width: 100%; height: 100%; object-fit: contain;" controls><source data-src="${url}" type="video/${fileExtension}"></video>` :
+        `<img class="gallery-image lazy" data-src="${url}" alt="Image">`
+      }
+      <div class="upload-time">上傳於: ${new Date(parseInt(timestamp)).toLocaleString('zh-CN')}</div>
+      ${brand ? `<div class="media-info">${brand} / ${category}</div>` : ''}
+    </div>
+    `;
   }).join('');
   
   const bodyContent = `
@@ -588,14 +713,30 @@ async function generateMediaListPage(DATABASE) {
         <h5><i class="fas fa-images"></i> 舊媒體庫 (非商品)</h5>
         <small class="text-muted">這裡是舊的 /admin 頁面，用於管理非商品圖片。商品圖片請到「商品列表」管理。</small>
       </div>
-      ... (舊的 media 頁面內容) ...
+      <div class="card-body">
+        <div class="gallery">${mediaHtml}</div>
+      </div>
     </div>
+    <style>
+      .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+      .media-container { position: relative; aspect-ratio: 1/1; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+      .gallery-image, .gallery video { width: 100%; height: 100%; object-fit: cover; }
+      .media-type, .upload-time, .media-info { position: absolute; background: rgba(0,0,0,0.6); color: white; padding: 2px 5px; font-size: 12px; }
+      .media-type { top: 5px; left: 5px; }
+      .upload-time { bottom: 5px; left: 5px; display: none; }
+      .media-info { top: 5px; right: 5px; }
+      .media-container.selected { border: 2px solid #007bff; }
+      .media-container:hover .upload-time { display: block; }
+    </style>
+    <script>
+    // 舊的刪除和選擇 JS 邏輯沒有包含在這裡
+    // 需要的話可以從 v1 程式碼中移植過來
+    </script>
   `;
-  // 再次省略 v2.1 中的完整函式以保持簡潔
-  return generateMediaListPage_v2_1(DATABASE); 
+  return new Response(getHTMLTemplate('舊媒體庫', bodyContent), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 }
 
-// --- [保留] 獲取舊媒體庫資料 (不變) ---
+// --- [保留] 獲取舊媒體庫資料 (v2.1) ---
 async function fetchMediaData(DATABASE) {
   try {
     const { results } = await DATABASE.prepare('SELECT url, brand, category FROM media').all();
@@ -611,8 +752,9 @@ async function fetchMediaData(DATABASE) {
   }
 }
 
-// --- [保留] 刪除舊媒體庫圖片 (不變) ---
+// --- [保留] 刪除舊媒體庫圖片 (v2.1) ---
 async function handleDeleteImagesRequest(request, DATABASE, R2_BUCKET) {
+  // 注意：這個函式只刪除 media 表的圖片，不會刪除 products 的
   try {
     const keysToDelete = await request.json();
     if (!Array.isArray(keysToDelete) || keysToDelete.length === 0) {
@@ -620,12 +762,13 @@ async function handleDeleteImagesRequest(request, DATABASE, R2_BUCKET) {
     }
     const placeholders = keysToDelete.map(() => '?').join(',');
     await DATABASE.prepare(`DELETE FROM media WHERE url IN (${placeholders})`).bind(...keysToDelete).run();
+    
     const cache = caches.default;
     for (const url of keysToDelete) {
       await cache.delete(new Request(url));
       const urlParts = url.split('/');
       const fileName = urlParts[urlParts.length - 1];
-      const r2Key = fileName.split('.')[0]; 
+      const r2Key = fileName.split('.')[0]; // 假設舊格式是 r2Key.ext
       await R2_BUCKET.delete(r2Key);
     }
     return new Response(JSON.stringify({ message: '删除成功' }), { status: 200 });
@@ -634,7 +777,7 @@ async function handleDeleteImagesRequest(request, DATABASE, R2_BUCKET) {
   }
 }
 
-// --- [保留] Bing 背景圖 (不變) ---
+// --- [保留] Bing 背景圖 (v2.1) ---
 async function handleBingImagesRequest(request) {
   const cache = caches.default;
   const cacheKey = new Request('https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=5');
@@ -650,13 +793,4 @@ async function handleBingImagesRequest(request) {
   const response = new Response(JSON.stringify(returnData), { status: 200, headers: { 'Content-Type': 'application/json' } });
   await cache.put(cacheKey, response.clone());
   return response;
-}
-
-// --- [臨時] 為了讓上面的程式碼片段能運作，我需要重新宣告這兩個函式 ---
-// 在你完整的檔案中，你不需要這兩個，因為它們已經在 v2.1 程式碼中了
-function generateAddProductPage_v2_1(request) {
-  return generateAddProductPage(request); // 呼叫 v2.2 版本的函式
-}
-async function generateMediaListPage_v2_1(DATABASE) {
-  return generateMediaListPage(DATABASE); // 呼叫 v2.2 版本的函式
 }
