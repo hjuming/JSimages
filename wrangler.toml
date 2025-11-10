@@ -1,5 +1,5 @@
 # 你的 Worker 名稱 (會影響 .workers.dev 的子網域)
-name = "JSimages"
+name = "jsimages"
 
 # 你的程式碼進入點 (符合你的檔案名稱)
 main = "src/index.js" 
@@ -9,13 +9,13 @@ compatibility_date = "2023-12-01"
 # 連結 R2
 [[r2_buckets]]
 binding = "R2_BUCKET"
-# ❗️ 請改成你在 Cloudflare 建立的 R2 儲存桶名稱
+# 你的 R2 儲存桶名稱
 bucket_name = "my-images-bucket" 
 
 # 連結 D1
 [[d1_databases]]
 binding = "DATABASE"
-# ❗️ 這必須符合你建立的 D1 資料庫名稱
+# 你的 D1 資料庫名稱
 database_name = "image-db"
 database_id = "" # 部署時 Wrangler 會自動填入
 
