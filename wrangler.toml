@@ -2,7 +2,7 @@
 name = "JSimages"
 
 # 你的程式碼進入點 (符合你的檔案名稱)
-main = "_worker.js" 
+main = "src/index.js" 
 
 compatibility_date = "2023-12-01"
 
